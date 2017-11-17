@@ -36,8 +36,19 @@ def minibatch(batch_size, *tensors):
 
 
 def regression_loss(observed_ratings, predicted_ratings):
-    
-	return ((observed_ratings - predicted_ratings) ** 2).mean()
+    return ((observed_ratings - predicted_ratings) ** 2).mean()
+
+
+def l1_loss(observed_ratings, predicted_ratings):
+    return (torch.abs(observed_ratings-predicted_ratings)).mean()
+
+
+def hinge_loss(positive_predictions, negative_predictions):
+    loss = torch.clamp(negative_predictions -
+                       positive_predictions +
+                       1.0, 0.0)
+    return loss.mean()
+
 
 class ScaledEmbedding(nn.Embedding):
     """
@@ -69,3 +80,34 @@ class ZeroEmbedding(nn.Embedding):
         self.weight.data.zero_()
         if self.padding_idx is not None:
             self.weight.data[self.padding_idx].fill_(0)
+
+
+def sample_items(num_items, shape, random_state=None):
+    """
+    Randomly sample a number of items.
+
+    Parameters
+    ----------
+
+    num_items: int
+        Total number of items from which we should sample:
+        the maximum value of a sampled item id will be smaller
+        than this.
+    shape: int or tuple of ints
+        Shape of the sampled array.
+    random_state: np.random.RandomState instance, optional
+        Random state to use for sampling.
+
+    Returns
+    -------
+
+    items: np.array of shape [shape]
+        Sampled item ids.
+    """
+
+    if random_state is None:
+        random_state = np.random.RandomState()
+
+    items = random_state.randint(0, num_items, shape)
+
+    return items
