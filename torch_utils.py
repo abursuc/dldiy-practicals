@@ -12,6 +12,20 @@ def gpu(tensor, gpu=False):
         return tensor
 
 
+def accuracy_one(x):
+    
+    return x[:,0] < 0.5
+
+
+def shuffle_sentences(word,sent):
+
+    random_state = np.random.RandomState()
+    shuffle_indices = np.arange(len(sent))
+    random_state.shuffle(shuffle_indices)
+    
+    return tuple([word[shuffle_indices,:], sent[shuffle_indices]])
+
+
 def shuffle(*arrays):
 
     random_state = np.random.RandomState()
@@ -23,6 +37,9 @@ def shuffle(*arrays):
     else:
         return tuple(x[shuffle_indices] for x in arrays)
 
+def minibatch_sentences(batch_size, word, sent):
+    for i in range(0, len(sent), batch_size):
+        yield tuple([word[i:i+batch_size,:], sent[i:i+batch_size]])
 
 def minibatch(batch_size, *tensors):
 
