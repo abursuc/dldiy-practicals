@@ -1,0 +1,2244 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Deep Learning DIY lectures</title>
+    <meta charset="utf-8">
+    <style>
+     .left-column {
+       width: 50%;
+       float: left;
+     }
+     .reset-column {
+       overflow: auto;
+        width: 100%;
+     }
+     .big { font-size: 1.5em; }
+     .small { font-size: 0.2em; }
+    
+     .tiny { font-size: 12pt; }
+     
+
+     .right-column {
+       width: 50%;
+       float: right;
+     }
+     .footnote {
+        position: absolute;
+        bottom: 2em;
+        margin: 1em 2em;
+      }
+
+      .credit {
+        position: absolute;
+        float:left;
+        bottom: 0em;
+        margin: 0em 0em;
+        font-size: 0.4em;
+      }
+
+      .citation {
+        /*float: left;*/
+        /*margin: 0em 0em;*/
+        bottom: 2em;
+        right: 7em;
+        left: 1em;
+        /*margin: 2em 0em;*/
+        position: absolute;
+        color: #4B005F;
+        font-style: italic;
+        line-height: 100% !important;
+      }
+
+      .reset-column {
+        overflow: auto;
+         width: 100%;
+      }
+
+      .right{
+        float:right;
+      }
+
+      .left{
+        float:left;
+      }
+      .red { color: #ee1111; }
+      .grey { color: #bbbbbb; }
+      .green {color: #258212;}
+      .purple {color: #800080}
+      </style>
+    <link rel="stylesheet" type="text/css" href="slides.css">
+  </head>
+  <body>
+    <textarea id="source">
+
+
+class: center, middle
+
+# Lecture 7:
+### Convolutions, CNN Architectures, FAQ, Deep Learning project
+
+Andrei Bursuc - Florent Krzakala - Marc Lelarge 
+<br/>
+<br/>
+.center[<img src="images/logos.png" style="width: 700px;" />]
+
+.citation.tiny[
+With slides from A. Karpathy, F. Fleuret, J. Johnson, S. Yeung, E. Gavves ...]
+
+---
+## Recap
+
+.left[
+- Neural networks
+
+- Activation functions
+
+- Deep regularization
+
+- Convolutional layers
+
+- CNN architectures
+
+- Practical PyTorch: Sentiment analysis
+]
+ 
+
+---
+## Recap
+.center[<img src="images/enigma_1.png" style="width: 760px;" />]
+
+---
+## Recap
+.center[<img src="images/enigma_2.png" style="width: 760px;" />]
+
+---
+## Recap
+.center[<img src="images/enigma_3.png" style="width: 760px;" />]
+
+---
+## Recap
+.center[<img src="images/enigma_4.png" style="width: 760px;" />]
+
+---
+## Recap
+.center[<img src="images/enigma_5.png" style="width: 760px;" />]
+
+---
+## Today
+
+.left[
+- Review of convolutions
+
+- CNN architectures (continued)
+
+- Visualizing and understanding CNNs
+
+- Tips & tricks for training deep networks
+
+- Practical PyTorch: RNNs, a training pipeline
+
+]
+
+---
+## Previously: One Hidden Layer Network
+
+.center[
+<img src="images/neural_network_hidden_t.svg" style="width: 700px;" />
+]
+<br>
+### PyTorch implementation
+```py
+model = torch.nn.Sequential(
+    torch.nn.Linear(D_in, H),   # weight matrix dim [D_in x H]
+    torch.nn.Tanh(),
+    torch.nn.Linear(H, D_out),   # weight matrix dim [H x D_out]
+    torch.nn.Softmax(),
+)
+```
+
+---
+## Previously: Dropout
+
+.center[
+<img src="images/dropout_traintest.png" style="width: 600px;" /><br/>
+]
+
+- One has to decide on which units/layers to use dropout, and with what probability $p$ units are dropped.
+- During training, for each sample, as many Bernoulli variables as units are sampled independently to select units to remove.
+- To keep the means of the inputs to layers unchanged, the initial version of dropout was multiplying activations by $p$ during test.
+- The standard variant is the "inverted dropout": multiply activations by $\frac{1}{1-p}$ during training and keep the network untouched during test.
+
+
+---
+
+## Previously: Dropout
+
+```py
+>>> x = Variable(torch.Tensor(3, 9).fill_ (1.0), requires_grad = True)
+>>> x.data
+1 1 1 1 1 1 1 1 1 
+1 1 1 1 1 1 1 1 1 
+1 1 1 1 1 1 1 1 1
+[torch.FloatTensor of size 3x9]
+
+>>> dropout = nn.Dropout(p = 0.75)
+>>> y = dropout(x)
+>>> y.data
+4 0 4 4 4 0 4 0 0 
+4 0 0 0 0 0 0 0 0 
+0 0 0 0 4 0 4 0 4
+[torch.FloatTensor of size 3x9]
+
+>>> l = y.norm(2, 1).sum() 
+>>> l.backward()
+>>> x.grad.data
+1.7889 0.0000 1.7889 1.7889 0.0000 0.0000 1.7889 0.0000 0.0000 
+4.0000 0.0000 0.0000 1.7889 0.0000 0.0000 0.0000 2.3094 0.0000
+0.0000 0.0000 0.0000 0.0000 2.3094 0.0000 0.0000 0.0000 2.3094
+[torch.FloatTensor of size 3x9]
+
+```
+
+$\frac{1}{1-0.75}=4$
+
+
+---
+
+## Previously: Why would we need convolutions?
+
+- One neuron gets specialized for detecting a full-image pattern, while being sensible to translations 
+
+.center[
+<img src="images/mlp_problem_1.png" style="width: 600px;" /><br/>
+]
+
+---
+## Previously: Why would we need convolutions?
+
+- Each neuron gets specialized for detecting a full-image pattern.  
+- Neurons from later layer work similarly
+- This is a big waste of parameters without good performance. 
+
+.center[
+<img src="images/mlp_problem_2.png" style="height: 400px;" /><br/>
+]
+
+---
+## Previously: Convolutions
+
+- Since convolutions output one scalar at a time, they can be seen as an individual neuron from a MLP with a receptive field limited to the dimensions of the kernel
+- The same neuron is "fired" over multiple areas from the input.
+
+.center[
+<img src="images/conv_intuition_1.png" style="width: 600px;" />
+]
+---
+## Previously: Convolutions
+
+- Since convolutions output one scalar at a time, they can be seen as an individual neuron from a MLP with a receptive field limited to the dimensions of the kernel
+- The same neuron is "fired" over multiple areas from the input.
+
+
+.left-column[
+<br>
+.center[
+<img src="images/conv_intuition_1.png" style="width: 350px;" />
+]
+]
+
+.right-column[
+.center[.green[Remember this?]]
+.center[
+<img src="images/neuron_1.png" style="width: 350px;" />
+]
+]
+---
+## Previously: Convolutions
+
+- Since convolutions output one scalar at a time, they can be seen as an individual neuron from a MLP with a receptive field limited to the dimensions of the kernel
+- The same neuron is "fired" over multiple areas from the input.
+
+
+.left-column[
+<br>
+.center[
+<img src="images/conv_intuition_2.png" style="width: 350px;" />
+]
+]
+
+.right-column[
+.center[.green[Remember this?]]
+.center[
+<img src="images/neuron_1.png" style="width: 350px;" />
+]
+]
+
+
+---
+## Receptive field
+
+- The receptive field is defined as the region in the input space that a particular CNN's feature is looking at (_i.e._ be affected by). 
+- A receptive field of a feature can be fully described by its center location and its size
+- Example: $k = 3\times3; p = 1\times1; s = 2\times2; input = 3\times3$
+
+.center[
+<img src="images/receptive_field_1.png" style="width: 600px;" />
+]
+
+.left-column[ 
+.tiny[Common way to visualize a CNN feature map.]
+]
+
+.right-column[
+.tiny[Fixed-sized CNN feature map visualization, where the size of each feature map is fixed, and the feature is located at the center of its receptive field.]
+]
+
+---
+## Receptive field
+
+- The receptive field is defined as the region in the input space that a particular CNN's feature is looking at (_i.e._ be affected by). 
+- A receptive field of a feature can be fully described by its center location and its size
+- Example: $k = 3\times3; p = 1\times1; s = 2\times2; input = 7\times7$
+
+.center[
+<img src="images/receptive_field_2.png" style="width: 600px;" />
+]
+---
+## Receptive field
+
+- The receptive field is defined as the region in the input space that a particular CNN's feature is looking at (_i.e._ be affected by). 
+- A receptive field of a feature can be fully described by its center location and its size
+
+.center[
+<img src="images/receptive_field_3.png" style="width: 600px;" />
+]
+
+.center[.tiny[Receptive fields for convolutional and pooling layers of VGG-16]]
+
+---
+## Dilated convolutions
+
+.center[
+<img src="images/dilated_conv_1.png" style="width: 600px;" />
+]
+
+.credit[Figure credit: F. Fleuret]
+
+---
+## Dilated convolutions
+
+.center[
+<img src="images/dilated_conv_2.png" style="width: 600px;" />
+]
+
+.credit[Figure credit: F. Fleuret]
+
+---
+## Dilated convolutions
+
+.center[
+<img src="images/dilated_conv_3.png" style="width: 600px;" />
+]
+
+.credit[Figure credit: F. Fleuret]
+
+---
+## Dilated convolutions
+
+.center[
+<img src="images/dilated_conv_4.png" style="width: 600px;" />
+]
+
+.credit[Figure credit: F. Fleuret]
+
+---
+## Dilated convolutions
+
+.center[
+<img src="images/dilated_conv_5.png" style="width: 600px;" />
+]
+
+.credit[Figure credit: F. Fleuret]
+
+---
+## Dilated convolutions
+
+.center[
+<img src="images/dilated_conv_7.png" style="width: 600px;" />
+]
+
+.credit[Figure credit: F. Fleuret]
+
+---
+## Dilated convolutions
+
+
+- Can we do better?
+- ... Without adding parameters?
+
+
+---
+## Dilated convolutions
+
+.center[
+<img src="images/dilated_conv_8.png" style="width: 600px;" />
+]
+
+.credit[Figure credit: F. Fleuret]
+
+---
+## Dilated convolutions
+
+.center[
+<img src="images/dilated_conv_9.png" style="width: 600px;" />
+]
+
+.credit[Figure credit: F. Fleuret]
+
+---
+## Dilated convolutions
+
+.center[
+<img src="images/dilated_conv_10.png" style="width: 600px;" />
+]
+
+.credit[Figure credit: F. Fleuret]
+
+---
+## Dilated convolutions
+
+.center[
+<img src="images/dilated_conv_11.png" style="width: 600px;" />
+]
+
+.credit[Figure credit: F. Fleuret]
+
+---
+## Dilated convolutions
+
+.center[
+<img src="images/dilated_conv_12.png" style="width: 600px;" />
+]
+
+.credit[Figure credit: F. Fleuret]
+
+---
+## Dilated convolutions
+
+.center[
+<img src="images/dilated_conv_13.png" style="width: 600px;" />
+]
+
+.credit[Figure credit: F. Fleuret]
+
+---
+## Dilated convolutions
+
+.center[
+<img src="images/dilated_conv_14.png" style="width: 600px;" />
+]
+
+.credit[Figure credit: F. Fleuret]
+
+---
+## Dilated convolutions
+
+.center[
+<img src="images/dilated_conv_15.png" style="width: 600px;" />
+]
+
+.credit[Figure credit: F. Fleuret]
+
+---
+## Dilated convolutions
+
+.center[
+<img src="images/dilated_conv_16.png" style="width: 600px;" />
+]
+
+.credit[Figure credit: F. Fleuret]
+
+---
+## Dilated convolutions
+
+.center[
+<img src="images/dilated_conv_17.png" style="width: 600px;" />
+]
+
+.credit[Figure credit: F. Fleuret]
+
+
+---
+## Dilated convolutions
+
+- also goes by the name _convolutions à trous_
+
+<br/>
+.left-column[
+.center[
+<img src="images/conv_atrous_1.png" style="width: 450px;" />
+]
+]
+
+.right-column[
+.center[
+<img src="images/conv_atrous_2.png" style="width: 450px;" />
+]
+]
+
+.reset-column[
+]
+
+.citation.tiny[DeepLab: Semantic Image Segmentation with Deep Convolutional Nets, Atrous Convolution, and Fully Connected CRFs; Chen et al., PAMI 2016]
+---
+## Dilated convolutions
+
+Usage
+
+
+.left-column[
+.center[In parallel]
+.center[
+<img src="images/conv_atrous_3.png" style="width: 450px;" />
+]
+]
+
+.right-column[
+.center[Stacked]
+.center[
+<img src="images/dilated_conv_stacked.png" style="width: 450px;" />
+]
+<br/>
+.center[.green[More frequently used]
+]
+
+
+
+.citation.tiny[DeepLab: Semantic Image Segmentation with Deep Convolutional Nets, Atrous Convolution, and Fully Connected CRFs; Chen et al., PAMI 2016
+
+Multi-scale context aggregation by dilated convolutions; Yu and Koltun, ICLR 2016]
+]
+
+---
+## Dilated convolutions
+
+- works for 1d as well
+- appealing alternative to recurrent neural networks
+
+<br/>
+
+.center[
+<img src="images/wavenet_conv_gif.gif" style="width: 600px;" />
+]
+
+.citation.tiny[WaveNet: A Generative Model for Raw Audio, A. van den Oord et al., 2016]
+
+---
+## Previously: GoogLeNet / Inception
+
+Szegedy et al. (2015) also introduce the idea of "auxiliary classifiers" to help the propagation of the gradient in the early layers.
+
+This is motivated by the reasonable performance of shallow networks that indicates early layers already encode informative and invariant features.
+
+
+.center[
+<img src="images/googlenet.png" style="width: 700px;" />
+]
+
+---
+## Previously: GoogLeNet / Inception
+
+The resulting GoogLeNet has 12 times less parameters than AlexNet and is more accurate on ILSVRC14 (Szegedy et al., 2015).
+
+.center[
+<img src="images/googlenet.png" style="width: 700px;" />
+]
+
+It was later extended with batch-normalization (Ioffe and Szegedy, 2015) and pass-through a la resnet (Szegedy et al., 2016)
+
+---
+## Previously: GoogLeNet / Inception
+
+
+<br/>
+.center[
+<img src="images/googlenet_specs.png" style="width: 780px;" />
+]
+
+.credit[Slide credit: A. Karpathy]
+
+---
+## A saturation point
+
+If we continue stacking more layers on a CNN:
+
+<br/>
+.center[
+<img src="images/depth_problem.png" style="width: 800px;" />
+]
+
+--
+
+.center[.red[Deeper models are harder to optimize]]
+
+.credit[Slide credit: J. Johnson]
+---
+.left-column[
+## ResNet
+]
+
+.citation.tiny[
+.left-column[Deep residual learning for image recognition, He et al., CVPR 2016.
+]
+]
+
+.right-column[
+.center[
+<img src="images/resnet.png" style="width: 290px;" />
+]
+]
+
+A block learns the residual w.r.t. identity 
+
+.center[
+<img src="images/residualblock.png" style="width: 290px;" />
+]
+
+--
+
+- Good optimization properties
+
+.credit[Slide credit: C. Ollion & O. Grisel]
+---
+.left-column[
+## ResNet
+]
+
+.citation.tiny[
+.left-column[
+Deep residual learning for image recognition, He et al., CVPR 2016.
+]
+]
+
+.right-column[
+.center[
+<img src="images/resnet.png" style="width: 290px;" />
+]
+]
+
+Even deeper models:
+
+34, 50, 101, 152 layers
+
+.credit[Slide credit: C. Ollion & O. Grisel]
+
+---
+.left-column[
+## ResNet
+]
+
+.citation.tiny[
+.left-column[
+Deep residual learning for image recognition, He et al., CVPR 2016.
+]
+]
+
+.right-column[
+.center[
+<img src="images/resnet.png" style="width: 290px;" />
+]
+]
+
+ResNet50 Compared to VGG:
+
+#### Superior accuracy in all vision tasks <br/>**5.25%** top-5 error vs 7.1%
+
+--
+
+#### Less parameters <br/>**25M** vs 138M
+
+--
+
+#### Computational complexity <br/>**3.8B Flops** vs 15.3B Flops
+
+--
+
+#### Fully Convolutional until the last layer
+
+.credit[Slide credit: C. Ollion & O. Grisel]
+
+---
+## ResNet
+
+Performance on ImageNet
+
+.center[
+<img src="images/resnet_1.png" style="width: 700px;" />
+]
+
+---
+## ResNet
+
+The output of a residual network can be understood as an ensemble, which explains in part its stability 
+
+.center[
+<img src="images/resnet_2.png" style="width: 650px;" />
+]
+
+.citation.tiny[Residual Networks Behave Like Ensembles of Relatively Shallow Networks, A. Veit et al., NIPS 2016]
+
+---
+## ResNet
+
+Results
+
+.center[
+<img src="images/resnet_3.png" style="width: 780px;" />
+]
+
+---
+## ResNet
+
+Results
+
+.center[
+<img src="images/resnet_8.png" style="width: 550px;" />
+]
+
+
+---
+## ResNet
+
+In PyTorch:
+
+```py
+def make_resnet_block(num_feature_maps , kernel_size = 3): 
+    
+    return nn.Sequential(
+
+        nn.Conv2d(num_feature_maps , num_feature_maps , 
+                  kernel_size = kernel_size ,
+                  padding = (kernel_size - 1) // 2), 
+
+        nn.BatchNorm2d(num_feature_maps),
+
+        nn.ReLU(inplace = True),
+        nn.Conv2d(num_feature_maps , num_feature_maps , 
+                   kernel_size = kernel_size ,
+                    padding = (kernel_size - 1) // 2), 
+
+        nn.BatchNorm2d(num_feature_maps),
+)
+```
+
+---
+## ResNet
+
+In PyTorch:
+
+```py
+def __init__(self, num_residual_blocks, num_feature_maps)
+...
+    self.resnet_blocks = nn.ModuleList() 
+    for k in range(nb_residual_blocks):
+        self.resnet_blocks.append(make_resnet_block(num_feature_maps , 3))
+...
+
+```
+
+```py
+def forward(self,x):
+...
+    for b in self.resnet_blocks:
+*        x = x + b(x)
+...
+    return x
+
+```
+
+---
+## Deeper is better
+
+.center[
+<img src="images/deeper.png" style="width: 660px;" />
+]
+
+.citation.tiny[
+from Kaiming He slides "Deep residual learning for image recognition." ICML. 2016.
+]
+
+---
+## Resnet variants: Stochastic Depth Networks
+
+- DropOut at layer level
+- Allows training up to 1K layers
+
+.center[
+<img src="images/stochastic_depth_resnet.png" style="width: 700px;" />
+]
+
+.citation.tiny[Deep Networks with Stochastic Depth, Huang et al., ECCV 2016]
+
+---
+## Resnet variants: DenseNet
+
+- Copying feature maps to upper layers via skip-connections
+- Better reuse of parameters and redundancy avoidance
+
+.center[
+<img src="images/densenet_1.png" style="width: 400px;" />
+]
+
+.center[
+<img src="images/densenet_2.png" style="width: 700px;" />
+]
+
+.citation.tiny[Densely Connected Convolutional Networks, Huang et al., CVPR 2017]
+
+---
+## Inception-V4 / -ResNet-V2
+
+Deep, modular and state-of-the-art</br>
+Achieves **3.1% top-5** classification error on imagenet
+
+.center[
+<img src="images/inception1.png" style="width: 480px;" />
+]
+
+.citation.tiny[Inception-v4, inception-resnet and the impact of residual connections on learning, C. Szegedy et al., 2016
+]
+
+.credit[Slide credit: C. Ollion & O. Grisel]
+---
+## Inception-V4 / -ResNet-V2
+
+More building blocks engineering...
+
+.center[
+<img src="images/inception2.png" style="width: 500px;" />
+]
+
+.citation.tiny[Inception-v4, inception-resnet and the impact of residual connections on learning, C. Szegedy et al., 2016
+]
+
+.credit[Slide credit: C. Ollion & O. Grisel]
+--
+
+- Active area or research
+- See also DenseNets, Wide ResNets, Fractal ResNets, ResNeXts,
+  Pyramidal ResNets...
+
+
+---
+## Comparison of models
+
+Top 1-accuracy, performance and size on ImageNet
+
+.center[
+<img src="images/architectures.png" style="width: 760px;" />
+]
+
+.citation.tiny[An Analysis of Deep Neural Network Models for Practical Applications, Canziani et al., 2016
+]
+
+
+
+---
+## Comparison of models
+
+Forward pass time and power consumption
+
+.center[
+<img src="images/deep_5.png" style="width: 760px;" />
+]
+
+.citation.tiny[An Analysis of Deep Neural Network Models for Practical Applications, Canziani et al., 2016
+]
+
+
+---
+## Comparison of models
+
+
+.center[
+<img src="images/deep_1.png" style="width: 760px;" />
+]
+
+.credit[Slide credit: A. Vedaldi]
+
+---
+## Comparison of models
+
+3 x more accurate in 3 years
+
+.center[
+<img src="images/deep_2.png" style="width: 760px;" />
+]
+
+101 ResNet Layers same size/speed as 16 VGG-VD layers
+
+.credit[Slide credit: A. Vedaldi]
+
+---
+## Comparison of models
+
+Number of parameters is about the same
+
+.center[
+<img src="images/deep_3.png" style="width: 760px;" />
+]
+
+.credit[Slide credit: A. Vedaldi]
+
+---
+## Comparison of models
+
+5 x slower 
+
+.center[
+<img src="images/deep_4.png" style="width: 760px;" />
+]
+
+.credit[Slide credit: A. Vedaldi]
+
+
+---
+
+class: center, middle
+
+# Understanding and visualizing CNNs
+
+.center[
+<img src="images/cnn_js.png" style="width: 700px;" />
+]
+
+
+---
+## What happens inside a CNN?
+
+<br>
+.center[
+<img src="images/deep_pipeline.png" style="width: 780px;" />
+]
+
+---
+## What happens inside a CNN?
+
+.left-column[
+<br/>
+.center[Visualize first layers filters/weights]
+]
+
+.right-column[.center[<img src="images/deep_pipeline_1.png" height="120px">]]
+
+.reset-column[]
+
+.center[<img src="images/cnn_vis_1.png" style="width: 600px;">
+]
+
+.citation.tiny[Visualizing and Understanding Convolutional Networks, M. Zeiler & R. Fergus, ECCV 2014]
+
+---
+## What happens inside a CNN?
+
+.left-column[
+<br/>
+.center[Visualize first layers filters/weights]
+]
+
+.right-column[.center[<img src="images/deep_pipeline_1.png" height="120px">]]
+
+.reset-column[
+]
+.left[<img src="images/cnn_vis_2.png" style="width: 100px;">
+]
+
+.citation.tiny[Visualizing and Understanding Convolutional Networks, M. Zeiler & R. Fergus, ECCV 2014]
+
+---
+## What happens inside a CNN?
+
+.left-column[
+- Visualize behavior in higher layers
+- We can visualize filters at higher layers, but they are less intuitive
+]
+
+.right-column[.center[<img src="images/deep_pipeline_3.png" height="120px">]]
+
+.reset-column[
+]
+<br/>
+.center[<img src="images/cnn_vis_7.png" style="width: 500px;">
+]
+
+.citation.tiny[Visualizing and Understanding Convolutional Networks, M. Zeiler & R. Fergus, ECCV 2014]
+
+---
+## What happens inside a CNN?
+
+.left-column[
+<br/>
+.center[Visualize first layers filters/weights]
+]
+
+.right-column[.center[<img src="images/deep_pipeline_2.png" height="120px">]]
+
+.reset-column[
+]
+.left[<img src="images/cnn_vis_3.png" style="height: 300px;">
+]
+
+.citation.tiny[Visualizing and Understanding Convolutional Networks, M. Zeiler & R. Fergus, ECCV 2014]
+
+---
+## What happens inside a CNN?
+
+.left-column[
+<br/>
+.center[Visualize first layers filters/weights]
+]
+
+.right-column[.center[<img src="images/deep_pipeline_3.png" height="120px">]]
+
+.reset-column[
+]
+.left[<img src="images/cnn_vis_4.png" style="height: 300px;">
+]
+
+.citation.tiny[Visualizing and Understanding Convolutional Networks, M. Zeiler & R. Fergus, ECCV 2014]
+
+---
+## What happens inside a CNN?
+
+.left-column[
+<br/>
+.center[Visualize first layers filters/weights]
+]
+
+.right-column[.center[<img src="images/deep_pipeline_4.png" height="120px">]]
+
+.reset-column[
+]
+.left[<img src="images/cnn_vis_5.png" style="height: 400px;">
+]
+
+.citation.tiny[Visualizing and Understanding Convolutional Networks, M. Zeiler & R. Fergus, ECCV 2014]
+
+---
+## What happens inside a CNN?
+
+.left-column[
+<br/>
+.center[Visualize first layers filters/weights]
+]
+
+.right-column[.center[<img src="images/deep_pipeline_5.png" height="120px">]]
+
+.reset-column[
+]
+.left[<img src="images/cnn_vis_6.png" style="height: 430px;">
+]
+
+.citation.tiny[Visualizing and Understanding Convolutional Networks, M. Zeiler & R. Fergus, ECCV 2014]
+
+---
+## What happens inside a CNN?
+
+.left-column[
+- 4096d "signature" for an image (layer right before the classifier)
+- Visualize with t-SNE: [here](http://cs.stanford.edu/people/karpathy/cnnembed/)
+]
+
+.right-column[.center[<img src="images/deep_pipeline_6.png" height="120px">]]
+
+.reset-column[
+]
+.center[<img src="images/cnn_vis_8.png" style="height: 400px;">
+]
+
+---
+## Feature evolution during training
+
+- For a particular neuron (that generates a feature map) 
+- Pick the strongest activation during training
+- For epochs 1, 2, 5, 10, 20, 30, 40, 64
+
+<br>
+.center[<img src="images/feature_evolution.png" style="width: 1000px;">
+]
+
+.citation.tiny[Visualizing and Understanding Convolutional Networks, M. Zeiler & R. Fergus, ECCV 2014]
+
+---
+## Visualize layer activations/feature maps
+
+AlexNet
+
+.center[<img src="images/vis_activ_1.png" style="width: 600px;">
+]
+.center[
+<img src="images/bwr_colorbar.png" style="width: 200px;" /> 
+]
+.credit[Figure credit: F. Fleuret]
+
+---
+## Visualize layer activations/feature maps
+
+AlexNet
+
+.center[<img src="images/vis_activ_2.png" style="width: 780px;">
+]
+.center[
+<img src="images/bwr_colorbar.png" style="width: 200px;" /> 
+]
+.credit[Figure credit: F. Fleuret]
+
+---
+## Visualize layer activations/feature maps
+
+AlexNet
+
+.center[<img src="images/vis_activ_3.png" style="width: 780px;">
+]
+.center[
+<img src="images/bwr_colorbar.png" style="width: 200px;" /> 
+]
+.credit[Figure credit: F. Fleuret]
+
+---
+## Visualize layer activations/feature maps
+
+AlexNet
+
+.center[<img src="images/vis_activ_4.png" style="width: 780px;">
+]
+.center[
+<img src="images/bwr_colorbar.png" style="width: 200px;" /> 
+]
+.credit[Figure credit: F. Fleuret]
+
+---
+## Visualize layer activations/feature maps
+
+AlexNet
+
+.center[<img src="images/vis_activ_5.png" style="width: 780px;">
+]
+.center[
+<img src="images/bwr_colorbar.png" style="width: 200px;" /> 
+]
+.credit[Figure credit: F. Fleuret]
+
+---
+## Visualize layer activations/feature maps
+
+ResNet152
+
+.center[<img src="images/vis_activ_6.png" style="width: 600px;">
+]
+.center[
+<img src="images/bwr_colorbar.png" style="width: 200px;" /> 
+]
+.credit[Figure credit: F. Fleuret]
+
+---
+## Visualize layer activations/feature maps
+
+ResNet152
+
+.center[<img src="images/vis_activ_7.png" style="width: 780px;">
+]
+.center[
+<img src="images/bwr_colorbar.png" style="width: 200px;" /> 
+]
+.credit[Figure credit: F. Fleuret]
+
+---
+## Visualize layer activations/feature maps
+
+ResNet152
+
+.center[<img src="images/vis_activ_8.png" style="width: 780px;">
+]
+.center[
+<img src="images/bwr_colorbar.png" style="width: 200px;" /> 
+]
+.credit[Figure credit: F. Fleuret]
+
+---
+## Occlusion sensitivity
+
+.center[<img src="images/occlusion_zeiler.png" style="width: 780px;">
+]
+
+.citation.tiny[Visualizing and Understanding Convolutional Networks, M. Zeiler & R. Fergus, ECCV 2014]
+
+---
+
+## Occlusion sensitivity
+
+An approach to understand the behavior of a network is to look at the output of the network "around" an image.
+
+We can get a simple estimate of the importance of a part of the input image by computing the difference between:
+
+1. the value of the maximally responding output unit on the image, and 
+2. the value of the same unit with that part occluded.
+
+
+---
+## Occlusion sensitivity
+
+An approach to understand the behavior of a network is to look at the output of the network "around" an image.
+
+We can get a simple estimate of the importance of a part of the input image by computing the difference between:
+
+1. the value of the maximally responding output unit on the image, and 
+2. the value of the same unit with that part occluded.
+
+.red[This is computationally intensive since it requires as many forward passes as there are locations of the occlusion mask, ideally the number of pixels.]
+
+---
+## Occlusion sensitivity
+
+.center[
+<img src="images/occlusion_sensitivity_1.png" style="width: 780px;" />
+]
+
+.credit[Figure credit: F. Fleuret]
+---
+## Occlusion sensitivity
+
+.center[
+<img src="images/occlusion_sensitivity_2.png" style="width: 780px;" />
+]
+.center[
+<img src="images/bwr_colorbar.png" style="width: 200px;" /> 
+]
+.credit[Figure credit: F. Fleuret]
+
+---
+## Occlusion sensitivity
+
+.center[
+<img src="images/occlusion_sensitivity_3.png" style="width: 780px;" />
+]
+.center[
+<img src="images/bwr_colorbar.png" style="width: 200px;" /> 
+]
+.credit[Figure credit: F. Fleuret]
+
+---
+## Occlusion sensitivity
+
+.center[
+<img src="images/occlusion_sensitivity_4.png" style="width: 780px;" />
+]
+.center[
+<img src="images/bwr_colorbar.png" style="width: 200px;" /> 
+]
+.credit[Figure credit: F. Fleuret]
+
+---
+## Visualize arbitrary neurons
+
+DeepVis toolbox [https://www.youtube.com/watch?v=AgkfIQ4IGaM 
+](https://www.youtube.com/watch?v=AgkfIQ4IGaM 
+)
+
+.center[
+<img src="images/deepvis.png" style="width: 780px;" />
+]
+
+---
+## Many more visualization techniques
+
+.center[
+<img src="images/cnn_vis_others.png" style="width: 700px;" />
+]
+
+---
+## Other resources 
+
+DrawNet [http://people.csail.mit.edu/torralba/research/drawCNN/drawNet.html](http://people.csail.mit.edu/torralba/research/drawCNN/drawNet.html)
+
+.center[
+<img src="images/drawNet.png" style="width: 780px;" />
+]
+
+---
+## Other resources 
+
+Basic CNNs [http://scs.ryerson.ca/~aharley/vis/](http://scs.ryerson.ca/~aharley/vis/)
+
+.center[
+<img src="images/harley_vis.png" style="width: 780px;" />
+]
+
+---
+## Other resources 
+
+Keras-JS [https://transcranial.github.io/keras-js/](https://transcranial.github.io/keras-js/)
+
+.center[
+<img src="images/keras_js.png" style="width: 600px;" />
+]
+
+---
+## Other resources 
+
+TensorFlow playground [http://playground.tensorflow.org](http://playground.tensorflow.org)
+
+.center[
+<img src="images/tf_playground.png" style="width: 700px;" />
+]
+
+---
+
+class: center, middle
+
+# GPUs
+
+.center[<img src="images/nvidia_titan_xp.jpg" style="width: 700px;" />]
+
+---
+## CPU vs GPU 
+
+<br/>
+.left[
+.center[CPU]
+<br/>
+.center[<img src="images/cpu.png" style="width: 350px;" />]
+]
+
+.right[
+.center[GPU]
+<br/>
+.center[<img src="images/nvidia_tesla_v100.jpg" style="width: 500px;" />]
+]
+
+
+---
+## CPU vs GPU 
+
+.left-column[
+- CPU: 
+  + fewer cores; each core is faster and more powerful
+  + useful for sequential tasks
+  ]
+
+.right-column[
+- GPU:
+  + more cores; each core is slower and weaker
+  + great for parallel tasks  
+]
+
+.reset-column[]
+.center[<img src="images/cpu_vs_gpu_2.png" style="width: 700px;" />]
+
+
+---
+## CPU vs GPU 
+
+.left-column[
+- CPU: 
+  + fewer cores; each core is faster and more powerful
+  + useful for sequential tasks
+  ]
+
+.right-column[
+- GPU:
+  + more cores; each core is slower and weaker
+  + great for parallel tasks  
+]
+
+.reset-column[]
+.center[<img src="images/cpu_vs_gpu_1.png" style="width: 700px;" />]
+
+
+.credit[Figure credit: J. Johnson]
+
+---
+## CPU vs GPU 
+
+- SP = single precision, 32 bits / 4 bytes
+- DP = double precision, 64 bits / 8 bytes
+
+.center[<img src="images/cpu_vs_gpu_3.png" style="width: 700px;" />]
+
+---
+## CPU vs GPU 
+
+.center[<img src="images/gpu_benchmark.png" style="width: 700px;" />]
+
+.citation.tiny[Benchmarking State-of-the-Art Deep Learning Software Tools, Shi et al., 2016]
+---
+## CPU vs GPU 
+
+- more benchmarks available at [https://github.com/jcjohnson/cnn-benchmarks](https://github.com/jcjohnson/cnn-benchmarks) 
+
+.center[<img src="images/cpu_vs_gpu_4.png" style="width: 700px;" />]
+
+.credit[Figure credit: J. Johnson]
+
+---
+## CPU vs GPU 
+
+- more benchmarks available at [https://github.com/jcjohnson/cnn-benchmarks](https://github.com/jcjohnson/cnn-benchmarks) 
+
+.center[<img src="images/cpu_vs_gpu_5.png" style="width: 700px;" />]
+
+.credit[Figure credit: J. Johnson]
+
+---
+## System 
+
+.center[<img src="images/system_1.png" style="width: 700px;" />]
+
+.credit[Figure credit: F. Fleuret]
+---
+## System 
+
+.center[<img src="images/system_2.png" style="width: 700px;" />]
+
+.credit[Figure credit: F. Fleuret]
+---
+## System 
+
+.center[<img src="images/system_3.png" style="width: 700px;" />]
+
+.credit[Figure credit: F. Fleuret]
+---
+## System 
+
+.center[<img src="images/system_4.png" style="width: 700px;" />]
+
+.credit[Figure credit: F. Fleuret]
+---
+## System 
+
+.center[<img src="images/system_5.png" style="width: 700px;" />]
+
+.credit[Figure credit: F. Fleuret]
+---
+## System 
+
+.center[<img src="images/system_6.png" style="width: 700px;" />]
+
+.credit[Figure credit: F. Fleuret]
+
+---
+## System 
+
+.center[<img src="images/system_7.png" style="width: 700px;" />]
+
+.credit[Figure credit: F. Fleuret]
+
+---
+## GPU
+
+- NVIDIA GPUs are programmed through CUDA (.purple[Compute Unified Device Architecture])
+
+- The alternative is OpenCL, supported by several manufacturers but with significant less investments than Nvidia
+
+- Nvidia and CUDA are dominating the field by far, though some alternatives start emerging: Google TPUs, embedded devices.
+
+---
+## Libraries 
+
+- BLAS (.purple[Basic Linear Algebra Subprograms]): vector/matrix products, and the cuBLAS implementation for NVIDIA GPUs
+
+- LAPACK (.purple[Linear Algebra Package]): linear system solving, Eigen-decomposition, etc.
+
+- cuDNN (.purple[NVIDIA CUDA Deep Neural Network library]) computations specific to deep-learning on NVIDIA GPUs.
+
+
+---
+## GPU usage in pytorch
+
+- Tensors of torch.cuda types are in the GPU memory. Operations on them are done by the GPU and resulting tensors are stored in its memory.
+
+- Operations cannot mix different tensor types (CPU vs. GPU, or different numerical types); except `copy_()`
+
+- Moving data between the CPU and the GPU memories is far slower than moving it inside the GPU memory.
+
+---
+## GPU usage in pytorch
+
+- The `Tensor` method `cuda()` returns a clone on the GPU if the tensor is not already there or returns the tensor itself if it was already there, keeping the bit precision. 
+
+- The method `cpu()` makes a clone on the CPU if needed.
+
+- They both keep the original tensor unchanged
+
+---
+
+class: center, middle
+
+# Training deep networks 
+
+### Tricks of the trade
+
+
+---
+## Data pre-processing
+
+- Input variables should be as decorrelated as possible
+  + Input variables are "more independent"
+  + Network is forced to find non-trivial correlations between inputs 
+  + Decorrelated inputs $\rightarrow$ better optimization
+- Input variables follow a more of less Gaussian distribution
+- In practice:
+  + compute mean and standard deviation
+      * per pixel: $(\mu, \sigma^2)$
+      * per color channel: 
+      
+.center[<img src="images/centering.png" style="width: 700px;" />]
+
+---
+## Data pre-processing
+
+Code from `torchvision/transforms/functional.py`
+
+```py
+def normalize(tensor, mean, std):
+...
+    for t, m, s in zip(tensor, mean, std):
+        t.sub_(m).div_(s)
+    
+    return tensor
+```
+
+---
+## Data augmentation
+
+
+- Changing the pixels without changing the label
+- Train on transformed data
+- Widely used 
+
+.center[<img src="images/data_augmentation.png" style="width: 700px;" />]
+
+
+.credit[Figure credit: E. Gavves]
+
+---
+## Data augmentation
+
+### Horizontal flips
+
+.center[<img src="images/hflip.png" style="width: 600px;" />]
+
+.credit[Figure credit: A. Karpathy]
+---
+## Data augmentation
+
+### Random crops/scales
+
+.center[<img src="images/rand_crop.png" style="width: 250px;" />]
+.credit[Figure credit: A. Karpathy]
+
+---
+## Data augmentation
+
+### Random crops/scales
+    
+.center[<img src="images/rand_crop.png" style="width: 250px;" />]
+
++ __Training__: sample random crops/scales
++ __Testing__: average a fixed set of crops
+
+.credit[Figure credit: A. Karpathy]
+
+---
+## Data augmentation
+
+### Color jitter    
+
+.center[<img src="images/color_jitter.png" style="width: 550px;" />]
+
+
+  + randomly jitter color, brightness, contrast, etc.
+  + other more complex alternatives exist  (PCA-jittering)
+
+
+.credit[Figure credit: A. Karpathy]
+
+---
+## Data augmentation
+
+- Various techniques can be mixed
+- Domain knowledge helps in finding new data augmentation techniques
+- Very useful for small datasets
+
+<br>
+.center[<img src="images/cat_augment.png" style="width: 700px;" />]
+
+---
+## Data augmentation
+
+```py
+from torchvision import transforms
+
+data_transforms = {
+    'train': transforms.Compose([
+*       transforms.RandomSizedCrop(224),
+*       transforms.RandomHorizontalFlip(),
+*       transforms.ColorJitter(brightness=0.2, contrast=0.2, stauration=0.2, hue=0.2)
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ]),
+    'val': transforms.Compose([
+        transforms.Scale(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ]),
+}
+```
+
+no need for data augmentation on validation set
+
+---
+## Weight initialization
+
+.big[
+There are a few contradictory requirements:
+]
+
+- Weights need to be small enough
+  + around origin for symmetric activation functions (tanh, sigmoid) $\rightarrow$ stimulate activation functions near their linear regime
+  + larger gradients $\rightarrow$ faster training
+- Weights need to be large enough
+  + otherwise signal is too weak for any serious learning
+
+
+.center[<img src="images/activation_functions.svg" style="width: 700px;" />]
+
+
+---
+## Weight initialization
+
+- Weights should evolve at the same rate across layers during training, and no
+layer should reach a saturation behavior before others.
+
+- Weights must be initialized to preserve the variance of the activations during the forward and backward computations
+    + neurons will operate in their full capacity
+
+- Initialize weights to be asymmetric
+  + if all weights are 0, neurons generate same gradient
+
+- Initialization depends on .purple[non-linearities] and .purple[data normalization] 
+
+
+---
+## Weight initialization
+
+From `torch/nn/modules/linear.py`
+
+```py
+def reset_parameters(self):
+    stdv = 1. / math.sqrt(self.weight.size(1))
+    self.weight.data.uniform_(-stdv, stdv)
+    if self.bias is not None:
+        self.bias.data.uniform_(-stdv, stdv)
+```
+
+---
+## Weight initialization
+
+From `torch/nn/modules/linear.py`
+
+```py
+def reset_parameters(self):
+    stdv = 1. / math.sqrt(self.weight.size(1))
+    self.weight.data.uniform_(-stdv, stdv)
+    if self.bias is not None:
+        self.bias.data.uniform_(-stdv, stdv)
+```
+
+.red[When used with tanh almost all neurons get completely either -1 and 1. Gradients will be zero]
+
+---
+## Xavier initialization
+
+- We get a better compromise with "Xavier initialization"
+- From `torch/nn/init.py`:
+
+```py
+def xavier_normal(tensor, gain=1):
+    if isinstance(tensor, Variable):
+            xavier_normal(tensor.data, gain=gain)
+            return tensor
+
+    fan_in, fan_out = _calculate_fan_in_and_fan_out(tensor)
+    std = gain * math.sqrt(2.0 / (fan_in + fan_out))
+    return tensor.normal_(0, std)
+```
+
+`fan_in` = num neurons in the input
+
+`fan_out` = num neurons at the output
+
+.citation.tiny[ Understanding the difficulty of training deep feedforward neural networks, Glorot & Bengio, 2010]
+
+---
+## Xavier initialization
+
+- We get a better compromise with "Xavier initialization"
+- From `torch/nn/init.py`:
+
+```py
+def xavier_normal(tensor, gain=1):
+    if isinstance(tensor, Variable):
+            xavier_normal(tensor.data, gain=gain)
+            return tensor
+
+    fan_in, fan_out = _calculate_fan_in_and_fan_out(tensor)
+    std = gain * math.sqrt(2.0 / (fan_in + fan_out))
+    return tensor.normal_(0, std)
+```
+
+.red[Unlike sigmoids, ReLUs ground to 0 the linear activation about half the time]
+
+.citation.tiny[ Understanding the difficulty of training deep feedforward neural networks, Glorot & Bengio, 2010]
+
+---
+## Kaiming He initialization
+
+- Double weight variance (_i.e._ multiply with $\sqrt{2}$) in order to:
+  + compensate for the zero flat area $\rightarrow$ input and output maintain same variance
+  + very similar to _Xavier_ initialization
+- From `torch/nn/init.py`:
+
+```py
+def kaiming_normal(tensor, a=0, mode='fan_in'):
+  if isinstance(tensor, Variable):
+      kaiming_normal(tensor.data, a=a, mode=mode)
+      return tensor
+
+  fan = _calculate_correct_fan(tensor, mode)
+  gain = calculate_gain('leaky_relu', a)
+  std = gain / math.sqrt(fan)
+  return tensor.normal_(0, std)
+```
+
+$gain = \sqrt{2}$
+
+.citation.tiny[Delving deep into rectifiers: Surpassing human-level performance on ImageNet classification, He et al., 2015]
+
+---
+## Kaiming He initialization
+
+The same type of reasoning can be applied to other activation functions
+
+From `torch/nn/init.py`:
+
+```py
+def calculate_gain(nonlinearity, param=None):
+  linear_fns = ['linear', 'conv1d', 'conv2d', 'conv3d', 'conv_transpose1d', 'conv_transpose2d', 'conv_transpose3d']
+*     if nonlinearity in linear_fns or nonlinearity == 'sigmoid':
+*         return 1
+*     elif nonlinearity == 'tanh':
+*         return 5.0 / 3
+*     elif nonlinearity == 'relu':
+*         return math.sqrt(2.0)
+      elif nonlinearity == 'leaky_relu':
+          if param is None:
+              negative_slope = 0.01
+          elif not isinstance(param, bool) and isinstance(param, int) or isinstance(param, float):
+              # True/False are instances of int, hence check above
+              negative_slope = param
+          else:
+              raise ValueError("negative_slope {} not a valid number".format(param))
+          return math.sqrt(2.0 / (1 + negative_slope ** 2))
+      else:
+          raise ValueError("Unsupported nonlinearity {}".format(nonlinearity))    
+```
+
+---
+## Weight initialization
+
+Does it actually matter that much?
+
+---
+## Weight initialization
+
+Does it actually matter that much?
+
+.center[<img src="images/anton.png" style="width: 300px;" />]
+
+.left-column[
+.center[<img src="images/weight_init_1.jpg" style="width: 300px;" />]
+]
+
+.right-column[
+.center[<img src="images/weight_init_2.jpg" style="width: 300px;" />]
+]
+
+
+---
+## Hyper-parameter search
+
+- Coarse $\rightarrow$ fine cross validation stage
+- First stage: only a few epochs to get rough idea of what params work
+- Second stage: longer running time, finer search
+- Usually there are some typical values for:
+    + Learning rate: [1e-1,1e-5] (log space steps)
+    + weight-decay: 0.0005
+    + momentum: 0.5, 0.9, 0.99
+
+- Learning rate:
+   + For learning rate use log scale when checking values
+   + If loss == NaN , learning rate is too big
+   + If loss stagnates, learning rate is too small
+
+
+---
+## Architecture hyperparamenters
+
+.big[There is no silver bullet.]
+
+- Re-use something well known that works and start from there
+- Modulate the capacity until it overfits a small subset, but does not overfit / underfit the full set
+- Capacity increases with more layers, more channels, larger receptive fields, or more units
+- Regularization to reduce the capacity or induce sparsity
+- Use prior knowledge about the "scale of meaningful context" to size filters / combinations of filters (e.g. knowing the size of objects in a scene, the max duration of a sound snippet that matters)
+- Grid-search all the variations that come to mind (if you can afford to)
+
+.credit.tiny[Slide credit: F. Fleuret]
+
+---
+## Architecture hyperparamenters
+
+- Number of hidden layers
+
+  + start small (a few layers) and increase complexity gradually
+  + add more layers $\rightarrow$ check if performance (on validation set) improves
+  + add more neurons $\rightarrow$ check if performance (on validation set) improves
+
+<br/>
+
+---
+## Architecture hyperparamenters
+
+- Number of hidden layers
+  + start small (a few layers) and increase complexity gradually
+  + add more layers $\rightarrow$ check if performance (on validation set) improves
+  + add more neurons $\rightarrow$ check if performance (on validation set) improves
+
+- Activation function
+  + start with ReLU then check out others: LeakyReLU, PReLU, etc.
+
+---
+## Architecture hyperparamenters
+
+- Number of hidden layers
+  + start small (a few layers) and increase complexity gradually
+  + add more layers $\rightarrow$ check if performance (on validation set) improves
+  + add more neurons $\rightarrow$ check if performance (on validation set) improves
+
+- Activation function
+  + start with ReLU then check out others: LeakyReLU, PReLU, etc.
+
+- Type and amount of regularization
+    + use $L_2$ even if network is deep or wide
+    + weight decay = $5e-5$
+    + you can set weight decay to 0 is learning rate is very small.
+
+
+
+---
+## Learning rate
+
+The most tweaked hyperparameter
+
+.center[<img src="images/alchemy.jpg" style="width: 550px;" />]
+
+.citation.tiny[Ben Recht]
+
+---
+## Learning rate
+
+The most tweaked hyperparameter
+
+.center[<img src="images/alchemy.jpg" style="width: 550px;" />]
+
+.center.red[Very active area of research!]
+.citation.tiny[Ben Recht]
+
+
+---
+## Learning rate
+
+The appropriate learning rate will lead to faster convergence by:
+  - reducing the loss quickly $\rightarrow$ large learning rate
+  - not be trapped in bad minimum $\rightarrow$ large learning rate
+  - not bounce around in narrow valleys $\rightarrow$ small learning rate
+  - not oscillate around a minimum $\rightarrow$ small learning rate
+
+.credit.tiny[Slide credit: F. Fleuret]
+
+---
+## Learning rate
+
+The appropriate learning rate will lead to faster convergence by:
+  - reducing the loss quickly $\rightarrow$ large learning rate
+  - not be trapped in bad minimum $\rightarrow$ large learning rate
+  - not bounce around in narrow valleys $\rightarrow$ small learning rate
+  - not oscillate around a minimum $\rightarrow$ small learning rate
+
+So learning rate should be larger at the beginning and smaller in the end.
+
+The practical strategy is to look at the losses and error rates across epochs and pick a learning rate and learning rate adaptation.
+
+.credit.tiny[Slide credit: F. Fleuret]
+
+---
+## Learning rate
+
+.center[CIFAR10 dataset]
+.center[<img src="images/cifar10.png" style="width: 400px;" />]
+
+.center[32 x 32 color images, 50k train samples, 10k test samples, 10 classes]
+
+---
+## Learning rate
+
+Small CNN on CIFAR10, cross-entropy, batch size 100, $\eta$ = 1e-1
+
+.center[<img src="images/lr_1.png" style="width: 600px;" />]
+
+.credit.tiny[Figure credit: F. Fleuret]
+
+---
+## Learning rate
+
+Small CNN on CIFAR10, cross-entropy, batch size 100
+
+.center[<img src="images/lr_2.png" style="width: 600px;" />]
+
+.credit.tiny[Figure credit: F. Fleuret]
+
+---
+## Learning rate
+
+Using $\eta$=1e-1 for 25 epochs, then reducing it.
+
+.center[<img src="images/lr_3.png" style="width: 600px;" />]
+
+.credit.tiny[Figure credit: F. Fleuret]
+
+---
+## Learning rate
+
+Using $\eta$=1e-1 for 25 epochs, then reducing reducing it to 1e-2
+
+.center[<img src="images/lr_4.png" style="width: 600px;" />]
+
+.credit.tiny[Figure credit: F. Fleuret]
+
+---
+## Learning rate
+
+The test loss is a poor performance indicator, as it may increase even more on misclassified examples, and decrease less on the ones getting fixed.
+
+.center[<img src="images/lr_5.png" style="width: 600px;" />]
+
+.credit.tiny[Figure credit: F. Fleuret]
+
+
+---
+## Learning rate schedules
+
+.big[Decay learning rate over time:
+]
+
+- .purple[constant]: learning rate remains constant for all epochs (not a good idea)
+
+- .purple[step decay]: decay learning by fixed amount (_e.g._ half) every few epochs
+
+- .purple[exponential decay]: $\eta = \eta_0 e^{-kt}$
+
+- .purple[inverse decay]: $\eta = \frac{\eta_0}{1+kt}$
+
+
+.big[In many cases, step decay is preferred.]
+
+
+---
+## Learning rate schedules
+
+.center[<img src="images/lr_decay.png" style="width: 600px;" />]
+
+Decay is more common for SGD+momentum and less for Adam.
+
+---
+## Learning rate schedules
+
+Cyclic learning rates
+
+Use multiple snapshots of a single model.
+
+.left-column[
+.center[<img src="images/cyclic_lr_1.png" style="width: 600px;" />]
+]
+
+.right-column[
+.center[<img src="images/cyclic_lr_2.png" style="width: 350px;" />]
+]
+
+.citation.tiny[Snapshoht ensembles: train 1, get M free, Huang et al., ICLR 2017]
+
+---
+## Learning rate schedules
+
+Using `torch.optim.lr_scheduler`:
+
+Vanilla variants: `StepLR`, `MultiStepLR`, `ExponentialLR` 
+
+```py
+# Assuming optimizer uses lr = 0.5 for all groups
+# lr = 0.05     if epoch < 30
+# lr = 0.005    if 30 <= epoch < 60
+# lr = 0.0005   if 60 <= epoch < 90
+# ...
+scheduler = StepLR(optimizer, step_size=30, gamma=0.1)
+for epoch in range(100):
+    scheduler.step()
+    train(...)
+    validate(...)
+```
+
+```py
+# Assuming optimizer uses lr = 0.5 for all groups
+# lr = 0.05     if epoch < 30
+# lr = 0.005    if 30 <= epoch < 80
+# lr = 0.0005   if epoch >= 80
+scheduler = MultiStepLR(optimizer, milestones=[30,80], gamma=0.1)
+for epoch in range(100):
+    scheduler.step()
+    train(...)
+    validate(...)
+```
+
+---
+## Learning rate schedules
+
+Using `torch.optim.lr_scheduler`:
+
+Novel variants: `ReduceLROnPlateau` 
+
+
+```py
+optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
+scheduler = ReduceLROnPlateau(optimizer, 'min')
+for epoch in range(10):
+    train(...)
+    val_loss = validate(...)
+    # Note that step should be called after validate()
+    scheduler.step(val_loss)
+```
+
+---
+## Early stopping
+
+- To avoid overfitting another popular technique is early stopping
+- Monitor performance on validation set
+- Training the network will decrease training error, as well validation error (although with a slower rate usually)
+- Stop when validation error starts increasing 
+  + most likely the network starts to overfit
+  + use a _patience_ term to let it degrade for a while and then stop
+
+.center[<img src="images/early_stopping.png" style="width: 350px;" />]
+
+
+---
+## Loss functions
+
+- Typically training is easier for classification than for regression to a scalar
+
+- However many Computer Vision papers rely on regression losses (`MSE`, `L1`, `Huber`,etc.) with good results
+
+- Multiple losses can be considered:
+  + on the same output
+  + by adding multiple heads to the network (e.g. classification + localization)
+
+- pytorch has already many loss functions/criterions readily available
+
+---
+## Summary
+
+- Preprocess data to be centered on zero
+
+- Initialize weights based on activation functions
+
+- Always use $L_2$ regularization and dropout
+
+- Use batch normalization generously
+
+- Start with Adam, but switch to SGD once more familiar with the data and the problem
+
+---
+## Babysitting your network
+
+.big[Lots of curve monitoring]
+
+.left-column[
+.center[<img src="images/gradient_descent_4.png" style="width: 500px;" />]
+]
+
+.right-column[
+.center[<img src="images/loss_functions.png" style="width: 500px;" />]
+.center[Discover more bizarre looking curves [https://lossfunctions.tumblr.com/](https://lossfunctions.tumblr.com/)]
+]
+
+---
+## Babysitting your network
+
+- Always check gradients if not computed automatically
+
+- Check that in the first steps you get a random loss
+
+- Check network with few samples
+   + turn off regularization. You should predictably overfit and have a 0 loss ◦ 
+   + turn or regularization. The loss should increase
+
+- Have a separate validation set
+   + Compare the curve between training and validation sets 
+   + There should be a gap, but not too large
+
+
+---
+## Other common pitfalls
+
+- inputs in range $[0,255]$ instead of $[0,1]$
+
+- different pre-processing between _train_, _valid_, _test_
+
+- non-shuffled dataset
+
+- class imbalance
+
+- too much data augmentation
+
+- too much regularization
+
+---
+## Other common pitfalls
+
+- too much/too little capacity
+
+- bugs in the loss function: wrong input, wrong gradients
+
+- wrong dimensions of the layers
+
+- exploding/vanishing gradients
+
+- given too little time for training
+
+- forgot in-appropriate `.train()`/`.eval()` flag on
+
+
+---
+## Transfer learning
+
+- Assume two datasets $S$ and $T$
+
+- Dataset $S$ is fully annotated, plenty of images and we can train a model $CNN_S$ on it
+
+- Dataset $T$ is not as much annotated and/or with fewer images
+  + annotations of $T$ do not necessarily overlap with $S$
+
+- We can use the model $CNN_S$ to learn a better $CNN_T$
+
+- This is transfer learning
+
+---
+## Transfer learning
+
+- Even if our dataset $T$ is not large, we can train a CNN for it
+
+- Pre-train a CNN on the dataset $S$
+
+- The we can do:
+  + fine-tuning
+  + use CNN as feature extractor
+
+
+---
+## Fine-tuning
+
+- Assume the parameters of $CNN_S$ are already a good start near our final local optimum
+
+- Use them as the initial parameters for our new CNN for the target dataset
+
+- This is a good solution when the dataset $T$ is relatively big 
+  + e.g. for Imagenet $S$ with 1M images, $T$ with a few thousands images
+
+
+---
+## Fine-tuning
+
+.center[<img src="images/finetuning.png" style="width: 600px;" />]
+
+- Depending on the size of $T$ decide which layer to freeze and which to finetune/replace
+- Use lower learning rate when fine-tuning: about $\frac{1}{10}$ of original learning rate
+  + for new layers use agressive learning rate
+- If $S$ and $T$ are very similar,fine-tune only fully-connected layers
+- If datasets are different and you have enough data, fine-tune all layers
+
+
+
+---
+## Recap
+
+- Review of convolutions
+
+- CNN architectures 
+
+- Visualizing and understanding CNNs
+
+- Tips & tricks for training deep networks
+
+
+</textarea>
+    <style TYPE="text/css">
+      code.has-jax {font: inherit; font-size: 100%; background: inherit; border: inherit;}
+    </style>
+    <script type="text/x-mathjax-config">
+      MathJax.Hub.Config({
+      tex2jax: {
+      inlineMath: [['$','$'], ['\\(','\\)']],
+      skipTags: ['script', 'noscript', 'style', 'textarea', 'pre'] // removed 'code' entry
+      }
+      });
+      MathJax.Hub.Queue(function() {
+      var all = MathJax.Hub.getAllJax(), i;
+      for(i = 0; i < all.length; i += 1) {
+         all[i].SourceElement().parentNode.className += ' has-jax';
+         }
+         });
+         </script>
+    <!-- <script type="text/javascript" src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script> -->
+    <script type="text/javascript" async
+      src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML">
+    </script>
+    <!-- <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script> -->
+
+        <script type="text/x-mathjax-config">
+        MathJax.Hub.Config({
+            tex2jax: {inlineMath: [['$','$'], ['\\(','\\)']]}
+        });
+        </script>
+    <script src="../remark.min.js" type="text/javascript">
+    </script>
+    <script type="text/javascript">
+      var slideshow = remark.create({
+        highlightStyle: 'github',
+        highlightSpans: true,
+        highlightLines: true,
+        ratio: '16:9',
+      });
+    </script>
+  </body>
+</html>
